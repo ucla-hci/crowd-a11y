@@ -78,10 +78,26 @@
 //         console.log(response);
 //     }
 // }
+var index = location.href.indexOf('=');
+const current_url = location.href.substr(index+1, 11);
+
+// chrome.runtime.onMessage.addListener(
+//   function(request, sender, sendResponse) {
+//     // console.log(sender.tab ?
+//     //             "from a content script:" + sender.tab.url :
+//     //             "from the extension");
+//     // if (request.greeting === "hello")
+//     //   sendResponse({farewell: "goodbye"});
+//     current_url = request.current_url;
+//     console.log("URL!!!");
+//     console.log(current_url);
+//   }
+// );
+
 
 async function sendRequest() {
     const Http = new XMLHttpRequest();
-    const url='https://video.google.com/timedtext?lang=en&v=qPix_X-9t7E';
+    const url=`https://video.google.com/timedtext?lang=en&v=${current_url}`;
     Http.open("GET", url);
     Http.send();
 
@@ -127,22 +143,142 @@ async function scrapeCaptions() {
 
 /*********/
 // Scrape YouTube Comments
-import ytcm from 'yt-comment-scraper'
 
-const payload = {
-  videoId: "qPix_X-9t7E", // Required
-  continuation: "",
-  sortByNewest: false,
-  mustSetCookie: false,
-  httpsAgent: {},
+class YouTubeComment {
+  private _text: string;
+  private _likeCount: number;
+  private _timestamps: Array<string>;
+  private _keywords: Array<string>;
+
+  constructor(text, likeCount, timestamps = [], keywords) {
+    this._text = text;
+    this._likeCount = likeCount;
+    this._timestamps = timestamps;
+    this._keywords = keywords;
+  }
+
+  get text() {
+    return this._text;
+  }
+
+  get likeCount() {
+    return this._likeCount;
+  }
+
+  get timestamps() {
+    return this._timestamps;
+  }
+
+  set timestamps(value) {
+    this._timestamps = value;
+  }
+
+  get keywords() {
+    return this._keywords;
+  }
+
+  set keywords(value) {
+    this._keywords = value;
+  }
 }
 
-ytcm.getComments(payload).then((data) =>{
-    console.log("comments!!")
-    console.log(data);
-}).catch((error)=>{
-    console.log(error);
-});
+var url = `https://youtube.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${current_url}&key=AIzaSyCmf7846pO6TJVkCF5tyvDAhKf4oVTNdQg&maxResults=100`;
+var xhr = new XMLHttpRequest();
+xhr.responseType = 'json';
+var commentObjects = [];
+var nextPageToken = "";
+
+async function scrapeComments() {
+
+  if (nextPageToken != "") {
+    url = `https://youtube.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${current_url}&key=AIzaSyCmf7846pO6TJVkCF5tyvDAhKf4oVTNdQg&maxResults=100&pageToken=${nextPageToken}`;
+  }
+
+  xhr.open("GET", url);
+  xhr.setRequestHeader("Accept", "application/json");
+  xhr.send();
+
+  if (xhr.readyState === XMLHttpRequest.DONE) {
+    return xhr;
+  }
+
+  let res;
+  const p = new Promise((r) => res = r);
+  xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.DONE) {
+          res(xhr);
+      }
+  }
+  return p;
+
+  // xhr.onreadystatechange = function () {
+  //   if (xhr.readyState === 4) {
+  //       console.log(xhr.status);
+  //       const public_comments = xhr.response;
+  //       nextPageToken = public_comments["nextPageToken"];
+  //       console.log(public_comments);
+  //       for (let i in public_comments["items"]) {
+  //         commentTexts.push(public_comments["items"][i]["snippet"]["topLevelComment"]["snippet"]["textOriginal"]);
+  //       }
+  //       scrapeComments(nextPageToken);
+  //   }};
+
+  // xhr.send();
+  // setTimeout(() => {  console.log("World!"); }, 2000);
+}
+
+async function scrapeAllComments() {
+  while (typeof(nextPageToken) != "undefined") {
+    const xhr = await scrapeComments();
+    const public_comments = xhr["response"];
+    nextPageToken = public_comments["nextPageToken"];
+    console.log(public_comments);
+    for (let i in public_comments["items"]) {
+      const originalText = public_comments["items"][i]["snippet"]["topLevelComment"]["snippet"]["textOriginal"];
+      const likeCount = public_comments["items"][i]["snippet"]["topLevelComment"]["snippet"]["likeCount"];
+      const commentKeywords = keyword_extractor.extract(originalText, {
+        language:"english",
+        remove_digits: false,
+        return_changed_case: false,
+        remove_duplicates: true,
+        return_chained_words: true
+      });
+
+      var comment = new YouTubeComment(originalText, likeCount, [], commentKeywords);
+      commentObjects.push(comment);
+    }
+  }
+}
+
+// assume the videos do not exceed 1 hour
+function extractTimestamp(comment) {
+  return comment.match(/[0-5]?[0-9]:[0-5][0-9]/g);
+}
+
+function getCommentsWithTimestamps() {
+  var commentObjectsWithTimestamps = [];
+  for (let i in commentObjects) {
+    var timestamps = extractTimestamp(commentObjects[i].text);
+    if (timestamps != null) {
+      commentObjects[i].timestamps = timestamps;
+      commentObjectsWithTimestamps.push(commentObjects[i]);
+    }
+  }
+  commentObjectsWithTimestamps.sort((a, b) => (a.likeCount > b.likeCount) ? -1 : 1);
+
+  console.log("HEYYYY");
+  console.log(commentObjectsWithTimestamps);
+  return commentObjectsWithTimestamps;
+}
+
+var commentsToDisplay;
+var commentsWithTimestamps;
+scrapeAllComments().then(() => {
+  console.log("Comments Scraped!!!");
+  console.log(commentObjects);
+  commentsWithTimestamps = getCommentsWithTimestamps();
+  commentsToDisplay = commentsWithTimestamps.slice(0, 5);
+})
 
 /*********/
 // scrapeCaptions();
@@ -270,7 +406,8 @@ scrapeCaptions().then(() => {
 // observe the progress bar
 
 // Select the node that will be observed for mutations
-const progressBar = document.getElementsByClassName("ytp-play-progress ytp-swatch-background-color")[0];
+// const progressBar = document.getElementsByClassName("ytp-play-progress ytp-swatch-background-color")[0];
+const progressBar = document.getElementsByClassName('ytp-progress-bar')[0];
 
 // Options for the observer (which mutations to observe)
 const config = { attributes: true, childList: true, subtree: true };
@@ -278,6 +415,122 @@ const config = { attributes: true, childList: true, subtree: true };
 // Callback function to execute when mutations are observed
 var videoContainer = document.getElementsByClassName("html5-video-container")[0];
 var floatCard;
+floatCard = document.createElement("DIV"); 
+floatCard.id = "float-card";
+floatCard.setAttribute('style', 'position: absolute; z-index: 2; height: 12em; width: 15%; margin-top: 45%; margin-left: 3%; padding-right: 1%; padding-left: 1%; background-color: #E5E5E5; border-radius: 0.5em;');
+// floatCard.class = 'overlay';             
+floatCard.innerHTML = `<p style="color: #000000; margin-left: 8%; margin-top: 10%;">Write a quick comment on <br> what you see to help people!</p>
+<p style="color: #000000; margin-left: 8%; margin-top: 8%;" id="source-text"></p>
+<button style="font-size: 12px; margin-left: 78%; margin-top: 2%" id="go-button">Go</button>`; 
+
+function calculatePercentage(timeStamp, totalTime) {
+  // CHANGE LATER
+  console.log(timeStamp / totalTime);
+  return timeStamp / totalTime;
+}
+
+enum timeRangeType {
+  NonDialouge,
+  NoText,
+}
+
+class timeRange {
+  private _start: number;
+  private _end: number;
+  private _type: timeRangeType;
+
+  constructor(start, end, type) {
+    this._start = start;
+    this._end = end;
+    this._type = type;
+  }
+
+  get start() {
+    return this._start;
+  }
+
+  get end() {
+    return this._end;
+  }
+
+  get type() {
+    return this._type;
+  }
+
+  // set timestamps(value) {
+  //   this._timestamps = value;
+  // }
+}
+
+// Video qPix_X-9t7E
+// const timeRangeArr = [
+//   new timeRange(68.76, 78.83, timeRangeType.NonDialouge),
+//   new timeRange(390.56, 391.71, timeRangeType.NonDialouge),
+//   new timeRange(625.23, 635, timeRangeType.NonDialouge),
+//   new timeRange(68.0, 78.0, timeRangeType.NoText),
+//   new timeRange(247.0, 254.0, timeRangeType.NoText),
+//   new timeRange(249.0, 254.0, timeRangeType.NoText),
+//   new timeRange(488.0, 511.0, timeRangeType.NoText),
+//   new timeRange(623.0, 634.0, timeRangeType.NoText),
+//   new timeRange(625.0, 634.0, timeRangeType.NoText),
+// ]
+
+// Video W0TM4LQmoZY
+// const timeRangeArr = [
+//   new timeRange(1.5, 6.37, timeRangeType.NonDialouge),
+//   new timeRange(259.88, 277, timeRangeType.NonDialouge),
+//   new timeRange(4.0, 24.0, timeRangeType.NoText),
+//   new timeRange(46.0, 102.0, timeRangeType.NoText),
+//   new timeRange(176.0, 200.0, timeRangeType.NoText),
+//   new timeRange(227.0, 261.0, timeRangeType.NoText),
+// ]
+
+// Video rNjPI84sApQ
+// const timeRangeArr = [
+//   new timeRange(209.4, 210.89, timeRangeType.NonDialouge),
+//   new timeRange(216.24, 217.27, timeRangeType.NonDialouge),
+//   new timeRange(303.88, 304.96, timeRangeType.NonDialouge),
+//   new timeRange(387.99, 409, timeRangeType.NonDialouge),
+//   new timeRange(6.0, 24.0, timeRangeType.NoText),
+//   new timeRange(59.0, 91.0, timeRangeType.NoText),
+//   new timeRange(162.0, 180.0, timeRangeType.NoText),
+//   new timeRange(322.0, 388.0, timeRangeType.NoText),
+// ]
+
+// Video QVCjdNxJreE
+const timeRangeArr = [
+  new timeRange(332.81, 333.91, timeRangeType.NonDialouge),
+  new timeRange(399.16, 400.20, timeRangeType.NonDialouge),
+  new timeRange(483.24, 485.18, timeRangeType.NonDialouge),
+  new timeRange(542.57, 559.00, timeRangeType.NonDialouge),
+  new timeRange(234.0, 263.0, timeRangeType.NoText),
+  new timeRange(280.0, 335.0, timeRangeType.NoText),
+  new timeRange(333.0, 361.0, timeRangeType.NoText),
+]
+
+// const timeStampArr1 = [
+//   // low lexical density
+//   [calculatePercentage(45.5, 635), calculatePercentage(57, 635)],
+//   // non-dialouge
+//   [calculatePercentage(68.76, 635), calculatePercentage(78.83, 635)],
+//   // text on screen
+//   [calculatePercentage(247, 635), calculatePercentage(254, 635)],
+//   [calculatePercentage(567, 635), calculatePercentage(571, 635)],
+//   [calculatePercentage(625.23, 635), calculatePercentage(635, 635)],
+// ];
+
+// const timeStampArr2 = [
+//   // non-dialouge
+//   [calculatePercentage(1.5, 277), calculatePercentage(6.37, 277)],
+//   [calculatePercentage(259.88, 277), calculatePercentage(277, 277)],
+//   // low lexical density
+//   // text on screen
+//   [calculatePercentage(4, 277), calculatePercentage(24, 277)],
+//   [calculatePercentage(46, 277), calculatePercentage(102, 277)],
+//   [calculatePercentage(104, 277), calculatePercentage(120, 277)],
+//   [calculatePercentage(176, 277), calculatePercentage(200, 277)],
+//   [calculatePercentage(227, 277), calculatePercentage(276, 277)],
+// ];
 
 const callback = function(mutationsList, observer) {
     // Use traditional 'for loops' for IE 11
@@ -287,24 +540,79 @@ const callback = function(mutationsList, observer) {
         }
         else if (mutation.type === 'attributes') {
             console.log('The ' + mutation.attributeName + ' attribute was modified.');
-            console.log(progressBar["style"].transform);
-            if (parseFloat(progressBar["style"].transform.substring(7)) > 0.1084 &&
-                parseFloat(progressBar["style"].transform.substring(7)) < 0.123 && videoContainer.childElementCount == 1) {
-                  floatCard = document.createElement("DIV"); 
-                  floatCard.setAttribute('style', 'position: absolute; z-index: 2; height: 7em; width: 15%; margin-top: 45%; margin-left: 3%; background-color: #E5E5E5; border-radius: 0.5em;');
-                  // floatCard.class = 'overlay';             
-                  floatCard.innerHTML = `<p style="color: #000000; margin-left: 8%; margin-top: 10%;">Write a quick comment on <br> what you see to help people!</p>
-                  <button style="font-size: 10px; margin-left: 78%; margin-top: 2%" id="go-button">Go</button>`; 
-                  videoContainer.appendChild(floatCard);
-                  const goButton = document.getElementById("go-button");
-                  goButton.onclick = function(e) {
-                    window.scrollTo(0, 1150);
+            // console.log(progressBar["style"].transform);
+            var showFloatCard = false;
+            // var timeStampArr;
+
+            // if (current_url == 'qPix_X-9t7E') {
+            //   timeStampArr = timeStampArr1;
+            // }
+
+            // if (current_url == 'W0TM4LQmoZY') {
+            //   timeStampArr = timeStampArr2;
+            // }
+            // console.log(timeStampArr);
+            for (let i in timeRangeArr) {
+              // EDGE CASE: one segment follows another but they have different types
+              // progressBar["style"].transform.substring(7)
+              if (parseInt(progressBar['ariaValueNow']) > timeRangeArr[i].start &&
+                parseInt(progressBar['ariaValueNow']) < timeRangeArr[i].end) {
+                  showFloatCard = true;
+                  if (document.getElementById("float-card") != null) {
+                    if (timeRangeArr[i].type == timeRangeType.NonDialouge) {
+                      document.getElementById("source-text").innerHTML = "Reason for showing: this video segment has no dialouge";
+                    }
+                    else if (timeRangeArr[i].type == timeRangeType.NoText) {
+                      document.getElementById("source-text").innerHTML = "Reason for showing: text on screen not mentioned";
+                    }
                   }
+                  // videoContainer.childElementCount == 1
+                  if (document.getElementById("float-card") == null) {
+                    videoContainer.appendChild(floatCard);   
+                    const goButton = document.getElementById("go-button");
+                    goButton.onclick = function(e) {
+                      window.scrollTo(0, 1150);
+                    }
+                    if (timeRangeArr[i].type == timeRangeType.NonDialouge) {
+                      document.getElementById("source-text").innerHTML = "Reason for showing: this video segment has no dialouge";
+                    }
+                    else if (timeRangeArr[i].type == timeRangeType.NoText) {
+                      document.getElementById("source-text").innerHTML = "Reason for showing: text on screen not mentioned";
+                    }
+                  }
+                  break;
+              }
             }
-            if ((parseFloat(progressBar["style"].transform.substring(7)) <= 0.1084 ||
-                parseFloat(progressBar["style"].transform.substring(7)) >= 0.123) && videoContainer.childElementCount == 2) {
-                  videoContainer.removeChild(floatCard);
+
+            if (!showFloatCard && document.getElementById("float-card") != null) {
+              videoContainer.removeChild(floatCard);
             }
+
+
+            // if (parseFloat(progressBar["style"].transform.substring(7)) > 0.1084 &&
+            //     parseFloat(progressBar["style"].transform.substring(7)) < 0.123 && videoContainer.childElementCount == 1) {
+            //       videoContainer.appendChild(floatCard);   
+            //       const goButton = document.getElementById("go-button");
+            //       goButton.onclick = function(e) {
+            //         window.scrollTo(0, 1150);
+            //       }
+            // }
+            // if ((parseFloat(progressBar["style"].transform.substring(7)) <= 0.1084 ||
+            //     parseFloat(progressBar["style"].transform.substring(7)) >= 0.123) && videoContainer.childElementCount == 2) {
+            //       videoContainer.removeChild(floatCard);
+            // }
+            // if (parseFloat(progressBar["style"].transform.substring(7)) > calculatePercentage(45.5) &&
+            //     parseFloat(progressBar["style"].transform.substring(7)) < calculatePercentage(57) && videoContainer.childElementCount == 1) {
+            //       videoContainer.appendChild(floatCard);   
+            //       const goButton = document.getElementById("go-button");
+            //       goButton.onclick = function(e) {
+            //         window.scrollTo(0, 1150);
+            //       }
+            // }
+            // if ((parseFloat(progressBar["style"].transform.substring(7)) <= calculatePercentage(45.5) ||
+            //     parseFloat(progressBar["style"].transform.substring(7)) >= calculatePercentage(57)) && videoContainer.childElementCount == 2) {
+            //       videoContainer.removeChild(floatCard);
+            // }
         }
     }
 };
@@ -317,12 +625,17 @@ new_observer.observe(progressBar, config);
 
 // end
 
+function convertToSecond(timestamp_string) {
+  const min_second_arr = timestamp_string.split(":");
+  return parseInt(min_second_arr[0]) * 60 + parseInt(min_second_arr[1]);   
+}
+
 function convertToMinSecond(timestamp_string) {
   console.log(timestamp_string);
   var timestamp_float = parseFloat(timestamp_string);
   var minutes = Math.floor(timestamp_float / 60);
   var seconds = Math.round(timestamp_float - minutes * 60);
-  return String(minutes) + ":" + String(seconds);   // The function returns the product of p1 and p2
+  return String(minutes) + ":" + String(seconds);   
 }
 
 var comments;
@@ -379,36 +692,60 @@ let observer = new MutationObserver((mutations) => {
                     <span>The __ is __</span>
                 </div>
               <div style="font-size: 130%">See what others are talking about ...</div>
-                <div style="margin-top: 3%;margin-left: 3%;margin-right: 3%;">
-                    <div><span style="color: blue;text-decoration: underline;" id="timestamp_3">01:36</span>&nbsp;&nbsp;the graphical representation ...</div>
-                    <div><span style="color: blue;text-decoration: underline;" id="timestamp_4">04:47</span>&nbsp;&nbsp;that cartoon of cells ...</div>
-                    <div><span style="color: blue;text-decoration: underline;" id="timestamp_5">06:01</span>&nbsp;&nbsp;the man looks like ...</div>
+                <div style="margin-top: 3%;margin-left: 3%;margin-right: 3%;" id="othersComments">
                 </div>`; 
               
+                /*
+                <div><span style="color: blue;text-decoration: underline;" id="timestamp_3">01:36</span>&nbsp;&nbsp;the graphical representation ...</div>
+                    <div><span style="color: blue;text-decoration: underline;" id="timestamp_4">04:47</span>&nbsp;&nbsp;that cartoon of cells ...</div>
+                    <div><span style="color: blue;text-decoration: underline;" id="timestamp_5">06:01</span>&nbsp;&nbsp;the man looks like ...</div>
+                */
                 comments.childNodes[1].appendChild(box);
 
-                const timestamp_3 = document.getElementById("timestamp_3");
-                const timestamp_4 = document.getElementById("timestamp_4");
-                const timestamp_5 = document.getElementById("timestamp_5");
+                const othersComments = document.getElementById("othersComments");
+                for (let i in commentsToDisplay) {
+                  var singleComment = document.createElement("DIV");
+                  var singleTimestamp = document.createElement("SPAN");
+                  singleTimestamp.setAttribute('style', 'color: blue;text-decoration: underline;');
+                  singleTimestamp.innerHTML = commentsToDisplay[i].timestamps[0];
+
+                  singleTimestamp.onclick = function(e) {
+                    const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
+                    window.scrollTo(0, 0);
+                    // Special situation: what if there is multiple timestamps
+                    console.log("ATTENSION!!");
+                    console.log(convertToSecond(commentsToDisplay[i].timestamps[0]));
+                    youtubeVideo.currentTime = convertToSecond(commentsToDisplay[i].timestamps[0]);
+                    youtubeVideo.play();
+                  }
+                  singleComment.appendChild(singleTimestamp);
+                  singleTimestamp.insertAdjacentHTML('afterend', '&nbsp;&nbsp;' + commentsToDisplay[i].text);
+
+                  othersComments.appendChild(singleComment);
+                }
+
+                // const timestamp_3 = document.getElementById("timestamp_3");
+                // const timestamp_4 = document.getElementById("timestamp_4");
+                // const timestamp_5 = document.getElementById("timestamp_5");
               
-                timestamp_3.onclick = function(e) {
-                  const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
-                  window.scrollTo(0, 0);
-                  youtubeVideo.currentTime = 96;
-                  youtubeVideo.play();
-                }
-                timestamp_4.onclick = function(e) {
-                  const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
-                  window.scrollTo(0, 0);
-                  youtubeVideo.currentTime = 287;
-                  youtubeVideo.play();
-                }
-                timestamp_5.onclick = function(e) {
-                  const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
-                  window.scrollTo(0, 0);
-                  youtubeVideo.currentTime = 361;
-                  youtubeVideo.play();
-                }
+                // timestamp_3.onclick = function(e) {
+                //   const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
+                //   window.scrollTo(0, 0);
+                //   youtubeVideo.currentTime = 96;
+                //   youtubeVideo.play();
+                // }
+                // timestamp_4.onclick = function(e) {
+                //   const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
+                //   window.scrollTo(0, 0);
+                //   youtubeVideo.currentTime = 287;
+                //   youtubeVideo.play();
+                // }
+                // timestamp_5.onclick = function(e) {
+                //   const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
+                //   window.scrollTo(0, 0);
+                //   youtubeVideo.currentTime = 361;
+                //   youtubeVideo.play();
+                // }
               }
             }
         }
@@ -458,6 +795,43 @@ let observer = new MutationObserver((mutations) => {
                   }
                 }
               }
+
+              var matched_comments = [];
+              for (let i in commentsWithTimestamps) {
+                for (let j in commentsWithTimestamps[i].keywords) {
+                  if (comment.textContent.includes(commentsWithTimestamps[i].keywords[j])) {
+                    matched_comments.push(commentsWithTimestamps[i]);
+                  }
+                }
+              }
+              console.log(matched_comments);
+              if (matched_comments.length != 0) {
+                box.innerHTML = `<div style="font-size: 130%">Add a time stamp ...</div>
+                <div style="margin-top: 3%;margin-left: 3%;margin-right: 3%;">
+                    <div style="margin-bottom: 2%;">suggested: Are you talking about&nbsp;&nbsp;<div id="timestamps"></div>?</div>
+                    <div id="sources"></div>
+                </div>`;
+
+                for (let i in matched_comments) {
+                  var timestamp = document.createElement("SPAN");
+                  timestamp.setAttribute("style", "color: blue;");
+                  timestamp.innerHTML = matched_comments[i].timestamps[0] + " ";
+                  timestamp.onclick = function(e) {
+                    comment.textContent = matched_comments[i].timestamps[0] + " " + comment.textContent;
+                    const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
+                    window.scrollTo(0, 0);
+                    youtubeVideo.currentTime = convertToSecond(matched_comments[i].timestamps[0]);
+                    youtubeVideo.play();
+                  }
+                  document.getElementById("timestamps").appendChild(timestamp);
+
+                  var sourceComment = document.createElement("DIV");
+                  sourceComment.innerHTML = matched_comments[i].text;
+                  document.getElementById("sources").appendChild(sourceComment);
+                }
+              }
+
+
 
               if (comment.textContent === "Why is the bipolar neuron upset") {
                 box.innerHTML = `<div style="font-size: 130%">Add a time stamp ...</div>
@@ -573,4 +947,5 @@ let observer = new MutationObserver((mutations) => {
     , attributes: true 
     , characterData: false
   })
+
 

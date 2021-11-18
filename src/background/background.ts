@@ -37,3 +37,7 @@
 //     console.log(data); // JSON data parsed by `data.json()` call
 //   });
 // })
+
+chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    chrome.tabs.sendMessage(tabs[0].id, {current_url: tabs[0].id});
+});
