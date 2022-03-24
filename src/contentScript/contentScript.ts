@@ -1,343 +1,35 @@
-// let placeholder = document.getElementById('simplebox-placeholder');
+// Dependencies
+import { scrapeAllComments, scrapeCaptions, getCommentsWithTimestamps, postData } from "./utils";
+import { timeRangeType } from "./timeRange";
+import { text_on_screen_keywords } from "./constants";
+import { timeRangeArr } from "./constants";
 
-// console.log("1");
-
-// while (!placeholder) {
-//     placeholder = document.getElementById('simplebox-placeholder');
-// }
-
-// console.log("2");
-
-// placeholder.innerHTML = "test";
-
-// let counter = 0;
-
-// let observer = new MutationObserver((mutations) => {
-//     if (document.getElementById('simplebox-placeholder')) {
-//         console.log("It's in the DOM!");
-//         document.getElementById('simplebox-placeholder').innerHTML = "test";
-//         counter += 1;
-//     }
-
-//     if (document.getElementById('contenteditable-root')) {
-//         console.log("It's in the DOM!");
-//         document.getElementById('contenteditable-root').innerHTML = "test";
-//         counter += 1;
-//     }
-
-//     if (counter == 2) {
-//         observer.disconnect();
-//     }
-//   })
-  
-//   observer.observe(document, {
-//       childList: true
-//     , subtree: true
-//     , attributes: false
-//     , characterData: false
-//   })
-
-//   // observer.disconnect();
-
-// problem: navigation -> does not show up
-
-// var video_id = window.location.search.split('v=')[1];
-// var ampersandPosition = video_id.indexOf('&');
-// if(ampersandPosition != -1) {
-//   video_id = video_id.substring(0, ampersandPosition);
-// }
-
-// const { getSubtitles } = require('youtube-captions-scraper');
- 
-// //Get Subtitles for Video
-// getSubtitles({
-//   videoID: 'qPix_X-9t7E', // youtube video id
-// }).then(captions => {
-//   console.log(captions);
-// });
-
-// import { getSubtitles } from 'youtube-captions-scraper';
- 
-// getSubtitles({
-//   videoID: 'qPix_X-9t7E', // youtube video id
-//   lang: 'en' // default: `en`
-// }).then(captions => {
-//   console.log(captions);
-// });
-
-// const Http = new XMLHttpRequest();
-// const url='https://video.google.com/timedtext?lang=en&v=qPix_X-9t7E';
-// Http.open("GET", url);
-// Http.send();
-
-// var response;
-
-// Http.onreadystatechange = function() {
-//     if(this.readyState==4 && this.status==200) {
-//         response = Http.responseXML;
-//         console.log(response);
-//     }
-// }
+// Get the id of a Youtube video
 var index = location.href.indexOf('=');
-const current_url = location.href.substr(index+1, 11);
-
-// chrome.runtime.onMessage.addListener(
-//   function(request, sender, sendResponse) {
-//     // console.log(sender.tab ?
-//     //             "from a content script:" + sender.tab.url :
-//     //             "from the extension");
-//     // if (request.greeting === "hello")
-//     //   sendResponse({farewell: "goodbye"});
-//     current_url = request.current_url;
-//     console.log("URL!!!");
-//     console.log(current_url);
-//   }
-// );
-
-
-async function sendRequest() {
-    const Http = new XMLHttpRequest();
-    const url=`https://video.google.com/timedtext?lang=en&v=${current_url}`;
-    Http.open("GET", url);
-    Http.send();
-
-    if (Http.readyState === XMLHttpRequest.DONE) {
-        return Http;
-    }
-
-    let res;
-    const p = new Promise((r) => res = r);
-    Http.onreadystatechange = () => {
-        if (Http.readyState === XMLHttpRequest.DONE) {
-            res(Http);
-        }
-    }
-    return p;
-}
-
-const keyword_extractor = require("keyword-extractor");
+const video_id = location.href.substr(index+1, 11);
 
 var captions = [];
-var caption_string = "";
 
-async function scrapeCaptions() {
-    const response = await sendRequest();
-    const transcript_children = response['responseXML'].children[0].children;
-
-    for (let i = 0; i < transcript_children.length; i++) {
-        const text = transcript_children[i].textContent;
-        caption_string += (text + " ");
-        const start = transcript_children[i].attributes[0].value;
-        const dur = transcript_children[i].attributes[1].value;
-        const keywords = keyword_extractor.extract(text, {
-            language:"english",
-            remove_digits: false,
-            return_changed_case: false,
-            remove_duplicates: true,
-            return_chained_words: true
-        });
-        captions.push({start: start, dur: dur, text: text, keywords: keywords});
-    }
-}
-
-
-/*********/
 // Scrape YouTube Comments
 
-class YouTubeComment {
-  private _text: string;
-  private _likeCount: number;
-  private _timestamps: Array<string>;
-  private _keywords: Array<string>;
-
-  constructor(text, likeCount, timestamps = [], keywords) {
-    this._text = text;
-    this._likeCount = likeCount;
-    this._timestamps = timestamps;
-    this._keywords = keywords;
-  }
-
-  get text() {
-    return this._text;
-  }
-
-  get likeCount() {
-    return this._likeCount;
-  }
-
-  get timestamps() {
-    return this._timestamps;
-  }
-
-  set timestamps(value) {
-    this._timestamps = value;
-  }
-
-  get keywords() {
-    return this._keywords;
-  }
-
-  set keywords(value) {
-    this._keywords = value;
-  }
-}
-
-var url = `https://youtube.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${current_url}&key=AIzaSyCmf7846pO6TJVkCF5tyvDAhKf4oVTNdQg&maxResults=100`;
-var xhr = new XMLHttpRequest();
-xhr.responseType = 'json';
+// var xhr = new XMLHttpRequest();
+// xhr.responseType = 'json';
 var commentObjects = [];
-var nextPageToken = "";
-
-async function scrapeComments() {
-
-  if (nextPageToken != "") {
-    url = `https://youtube.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${current_url}&key=AIzaSyCmf7846pO6TJVkCF5tyvDAhKf4oVTNdQg&maxResults=100&pageToken=${nextPageToken}`;
-  }
-
-  xhr.open("GET", url);
-  xhr.setRequestHeader("Accept", "application/json");
-  xhr.send();
-
-  if (xhr.readyState === XMLHttpRequest.DONE) {
-    return xhr;
-  }
-
-  let res;
-  const p = new Promise((r) => res = r);
-  xhr.onreadystatechange = () => {
-      if (xhr.readyState === XMLHttpRequest.DONE) {
-          res(xhr);
-      }
-  }
-  return p;
-
-  // xhr.onreadystatechange = function () {
-  //   if (xhr.readyState === 4) {
-  //       console.log(xhr.status);
-  //       const public_comments = xhr.response;
-  //       nextPageToken = public_comments["nextPageToken"];
-  //       console.log(public_comments);
-  //       for (let i in public_comments["items"]) {
-  //         commentTexts.push(public_comments["items"][i]["snippet"]["topLevelComment"]["snippet"]["textOriginal"]);
-  //       }
-  //       scrapeComments(nextPageToken);
-  //   }};
-
-  // xhr.send();
-  // setTimeout(() => {  console.log("World!"); }, 2000);
-}
-
-async function scrapeAllComments() {
-  while (typeof(nextPageToken) != "undefined") {
-    const xhr = await scrapeComments();
-    const public_comments = xhr["response"];
-    nextPageToken = public_comments["nextPageToken"];
-    console.log(public_comments);
-    for (let i in public_comments["items"]) {
-      const originalText = public_comments["items"][i]["snippet"]["topLevelComment"]["snippet"]["textOriginal"];
-      const likeCount = public_comments["items"][i]["snippet"]["topLevelComment"]["snippet"]["likeCount"];
-      const commentKeywords = keyword_extractor.extract(originalText, {
-        language:"english",
-        remove_digits: false,
-        return_changed_case: false,
-        remove_duplicates: true,
-        return_chained_words: true
-      });
-
-      var comment = new YouTubeComment(originalText, likeCount, [], commentKeywords);
-      commentObjects.push(comment);
-    }
-  }
-}
-
-// assume the videos do not exceed 1 hour
-function extractTimestamp(comment) {
-  return comment.match(/[0-5]?[0-9]:[0-5][0-9]/g);
-}
-
-function getCommentsWithTimestamps() {
-  var commentObjectsWithTimestamps = [];
-  for (let i in commentObjects) {
-    var timestamps = extractTimestamp(commentObjects[i].text);
-    if (timestamps != null) {
-      commentObjects[i].timestamps = timestamps;
-      commentObjectsWithTimestamps.push(commentObjects[i]);
-    }
-  }
-  commentObjectsWithTimestamps.sort((a, b) => (a.likeCount > b.likeCount) ? -1 : 1);
-
-  console.log("HEYYYY");
-  console.log(commentObjectsWithTimestamps);
-  return commentObjectsWithTimestamps;
-}
 
 var commentsToDisplay;
 var commentsWithTimestamps;
-scrapeAllComments().then(() => {
+
+scrapeAllComments(commentObjects, video_id).then(() => {
   console.log("Comments Scraped!!!");
   console.log(commentObjects);
-  commentsWithTimestamps = getCommentsWithTimestamps();
+  commentsWithTimestamps = getCommentsWithTimestamps(commentObjects);
   commentsToDisplay = commentsWithTimestamps.slice(0, 5);
 })
 
-/*********/
-// scrapeCaptions();
-// console.log(captions);
-// console.log(caption_string);
-// const NaturalLanguageUnderstandingV1 = require('ibm-watson/natural-language-understanding/v1');
-// const { IamAuthenticator } = require('ibm-watson/auth');
-
-// function extractKeywords(text) {
-//   const naturalLanguageUnderstanding = new NaturalLanguageUnderstandingV1({
-//     version: '2021-08-01',
-//     authenticator: new IamAuthenticator({
-//       apikey: 'wK9AWLoaE1d87mE4CHe_uplNSuJkjkPiMBW9NouRenx5',
-//     }),
-//     serviceUrl: 'https://api.us-east.natural-language-understanding.watson.cloud.ibm.com/instances/db9da5ba-bf8c-444e-b64a-ffdc988b0407',
-//   });
-
-//   const analyzeParams = {
-//     'text': text,
-//     'features': {
-//       'keywords': {
-//         'emotion': true,
-//         'sentiment': true,
-//         'limit': 10,
-//       },
-//     },
-//   };
-
-//   naturalLanguageUnderstanding.analyze(analyzeParams)
-//     .then(analysisResults => {
-//       console.log(JSON.stringify(analysisResults, null, 2));
-//     })
-//     .catch(err => {
-//       console.log('error:', err);
-//     });
-// }
-
-async function postData(url = '', data = {}) {
-  // Default options are marked with *
-  const response = await fetch(url, {
-    method: 'POST', // *GET, POST, PUT, DELETE, etc.
-    mode: 'cors', // no-cors, *cors, same-origin
-    cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
-    credentials: 'same-origin', // include, *same-origin, omit
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Basic YXBpa2V5OndLOUFXTG9hRTFkODdtRTRDSGVfdXBsTlN1Smtqa1BpTUJXOU5vdVJlbng1'
-      // 'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    redirect: 'follow', // manual, *follow, error
-    referrerPolicy: 'no-referrer', // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-    body: JSON.stringify(data) // body data type must match "Content-Type" header
-  });
-  return response.json(); // parses JSON response into native JavaScript objects
-}
-
 var keywords;
 
-scrapeCaptions().then(() => {
+// Get keywords using IBM's api
+scrapeCaptions(video_id, captions).then((caption_string) => {
     console.log(captions);
     console.log(caption_string);
 
@@ -365,38 +57,7 @@ scrapeCaptions().then(() => {
       console.log('KEYWORDS!!');
       console.log(keywords);
     });
-
-    // extractKeywords(caption_string);
-
-    // const keywords = keyword_extractor.extract(caption_string, {
-    //     language:"english",
-    //     remove_digits: false,
-    //     return_changed_case: false,
-    //     remove_duplicates: true,
-    //     return_chained_words: false
-    // });
-
-    // console.log(keywords);
 })
-
-
-
-// async function myFunc() {
-//     //Get full transcription as one string
-//   const subtitles = await getSubtitlesContent({ videoID: video_id });
-  
-//   let youtubeCaptions = new YoutubeCaptions(video_id /*youtube video id*/);
-  
-//   //retrieve caption tracks
-//   let captionTracks = await youtubeCaptions.getCaptionTracks();
-
-//   console.log(captionTracks);
-  
-//   // //retrieve subtitles by language
-//   // let subtitles = await youtubeCaptions.getSubtitles('en' /*optional language*/);
-// }
-
-// myFunc();
 
 // var progressBar = document.getElementsByClassName("ytp-play-progress ytp-swatch-background-color");
 // console.log(progressBar[0]["style"].cssText);
@@ -429,108 +90,21 @@ function calculatePercentage(timeStamp, totalTime) {
   return timeStamp / totalTime;
 }
 
-enum timeRangeType {
-  NonDialouge,
-  NoText,
-}
-
-class timeRange {
-  private _start: number;
-  private _end: number;
-  private _type: timeRangeType;
-
-  constructor(start, end, type) {
-    this._start = start;
-    this._end = end;
-    this._type = type;
-  }
-
-  get start() {
-    return this._start;
-  }
-
-  get end() {
-    return this._end;
-  }
-
-  get type() {
-    return this._type;
-  }
-
-  // set timestamps(value) {
-  //   this._timestamps = value;
-  // }
-}
-
-// Video qPix_X-9t7E
-// const timeRangeArr = [
-//   new timeRange(68.76, 78.83, timeRangeType.NonDialouge),
-//   new timeRange(390.56, 391.71, timeRangeType.NonDialouge),
-//   new timeRange(625.23, 635, timeRangeType.NonDialouge),
-//   new timeRange(68.0, 78.0, timeRangeType.NoText),
-//   new timeRange(247.0, 254.0, timeRangeType.NoText),
-//   new timeRange(249.0, 254.0, timeRangeType.NoText),
-//   new timeRange(488.0, 511.0, timeRangeType.NoText),
-//   new timeRange(623.0, 634.0, timeRangeType.NoText),
-//   new timeRange(625.0, 634.0, timeRangeType.NoText),
-// ]
-
-// Video W0TM4LQmoZY
-// const timeRangeArr = [
-//   new timeRange(1.5, 6.37, timeRangeType.NonDialouge),
-//   new timeRange(259.88, 277, timeRangeType.NonDialouge),
-//   new timeRange(4.0, 24.0, timeRangeType.NoText),
-//   new timeRange(46.0, 102.0, timeRangeType.NoText),
-//   new timeRange(176.0, 200.0, timeRangeType.NoText),
-//   new timeRange(227.0, 261.0, timeRangeType.NoText),
-// ]
-
-// Video rNjPI84sApQ
-// const timeRangeArr = [
-//   new timeRange(209.4, 210.89, timeRangeType.NonDialouge),
-//   new timeRange(216.24, 217.27, timeRangeType.NonDialouge),
-//   new timeRange(303.88, 304.96, timeRangeType.NonDialouge),
-//   new timeRange(387.99, 409, timeRangeType.NonDialouge),
-//   new timeRange(6.0, 24.0, timeRangeType.NoText),
-//   new timeRange(59.0, 91.0, timeRangeType.NoText),
-//   new timeRange(162.0, 180.0, timeRangeType.NoText),
-//   new timeRange(322.0, 388.0, timeRangeType.NoText),
-// ]
-
-// Video QVCjdNxJreE
-const timeRangeArr = [
-  new timeRange(332.81, 333.91, timeRangeType.NonDialouge),
-  new timeRange(399.16, 400.20, timeRangeType.NonDialouge),
-  new timeRange(483.24, 485.18, timeRangeType.NonDialouge),
-  new timeRange(542.57, 559.00, timeRangeType.NonDialouge),
-  new timeRange(234.0, 263.0, timeRangeType.NoText),
-  new timeRange(280.0, 335.0, timeRangeType.NoText),
-  new timeRange(333.0, 361.0, timeRangeType.NoText),
-]
-
-// const timeStampArr1 = [
-//   // low lexical density
-//   [calculatePercentage(45.5, 635), calculatePercentage(57, 635)],
-//   // non-dialouge
-//   [calculatePercentage(68.76, 635), calculatePercentage(78.83, 635)],
-//   // text on screen
-//   [calculatePercentage(247, 635), calculatePercentage(254, 635)],
-//   [calculatePercentage(567, 635), calculatePercentage(571, 635)],
-//   [calculatePercentage(625.23, 635), calculatePercentage(635, 635)],
-// ];
-
-// const timeStampArr2 = [
-//   // non-dialouge
-//   [calculatePercentage(1.5, 277), calculatePercentage(6.37, 277)],
-//   [calculatePercentage(259.88, 277), calculatePercentage(277, 277)],
-//   // low lexical density
-//   // text on screen
-//   [calculatePercentage(4, 277), calculatePercentage(24, 277)],
-//   [calculatePercentage(46, 277), calculatePercentage(102, 277)],
-//   [calculatePercentage(104, 277), calculatePercentage(120, 277)],
-//   [calculatePercentage(176, 277), calculatePercentage(200, 277)],
-//   [calculatePercentage(227, 277), calculatePercentage(276, 277)],
-// ];
+function sort_object(obj) {
+  var items = Object.keys(obj).map(function(key) {
+      return [key, obj[key]];
+  });
+  items.sort(function(first, second) {
+      return second[1] - first[1];
+  });
+  var sorted_obj={}
+  items.forEach(function(k, v) {
+      var use_key = v[0]
+      var use_value = v[1]
+      sorted_obj[use_key] = use_value
+  })
+  return(sorted_obj)
+} 
 
 const callback = function(mutationsList, observer) {
     // Use traditional 'for loops' for IE 11
@@ -539,54 +113,132 @@ const callback = function(mutationsList, observer) {
             console.log('A child node has been added or removed.');
         }
         else if (mutation.type === 'attributes') {
-            console.log('The ' + mutation.attributeName + ' attribute was modified.');
-            // console.log(progressBar["style"].transform);
-            var showFloatCard = false;
-            // var timeStampArr;
+          switch(mutation.attributeName) {
+            case "aria-valuenow":
+              console.log('The ' + mutation.attributeName + ' attribute was modified.');
+              console.log(mutation.oldValue);
+              var showFloatCard = false;
+              // var timeStampArr;
 
-            // if (current_url == 'qPix_X-9t7E') {
-            //   timeStampArr = timeStampArr1;
-            // }
+              // if (current_url == 'qPix_X-9t7E') {
+              //   timeStampArr = timeStampArr1;
+              // }
 
-            // if (current_url == 'W0TM4LQmoZY') {
-            //   timeStampArr = timeStampArr2;
-            // }
-            // console.log(timeStampArr);
-            for (let i in timeRangeArr) {
-              // EDGE CASE: one segment follows another but they have different types
-              // progressBar["style"].transform.substring(7)
-              if (parseInt(progressBar['ariaValueNow']) > timeRangeArr[i].start &&
-                parseInt(progressBar['ariaValueNow']) < timeRangeArr[i].end) {
-                  showFloatCard = true;
-                  if (document.getElementById("float-card") != null) {
-                    if (timeRangeArr[i].type == timeRangeType.NonDialouge) {
-                      document.getElementById("source-text").innerHTML = "Reason for showing: this video segment has no dialouge";
+              // if (current_url == 'W0TM4LQmoZY') {
+              //   timeStampArr = timeStampArr2;
+              // }
+              // console.log(timeStampArr);
+              for (let i in timeRangeArr) {
+                // EDGE CASE: one segment follows another but they have different types
+                // progressBar["style"].transform.substring(7)
+                if (parseInt(progressBar['ariaValueNow']) >= timeRangeArr[i].start &&
+                  parseInt(progressBar['ariaValueNow']) <= timeRangeArr[i].end) {
+                    if (parseInt(progressBar['ariaValueNow']) == timeRangeArr[i].end) {
+                      console.log(timeRangeArr[i].hasVisited);
+                      if (timeRangeArr[i].hasVisited == false) {
+                        console.log("HEYYY!");
+                        timeRangeArr[i].hasVisited = true;
+                        var audio = new Audio(
+                          'https://media.geeksforgeeks.org/wp-content/uploads/20190531135120/beep.mp3');
+                        audio.play();
+                        console.log('PLAYED!!!');
+                        const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
+                        youtubeVideo.pause();
+                        // User uses k to resume the video
+                        // TO DO #1: User uses tab to go over the comments
+
+                        var commentsToRead = []
+
+                        for (let j in commentsWithTimestamps) {
+                          const timestamp_second = convertToSecond(commentsWithTimestamps[j].timestamps[0]);
+                          if (timestamp_second >= timeRangeArr[i].start && timestamp_second <= timeRangeArr[i].end) {
+                            commentsToRead.push(commentsWithTimestamps[j])
+                          }
+                        }
+
+                        // commentToRead : # of keywords
+                        var dict: any = {};
+
+                        for (let x in commentsToRead) {
+                          var numOfKeywords = 0;
+                          for (let y in text_on_screen_keywords) {
+                            if (commentsToRead[x].text.includes(text_on_screen_keywords[y])) {
+                              numOfKeywords += 1;
+                            }
+                          }
+                          dict[commentsToRead[x]] = numOfKeywords;
+                        }
+
+                        var sorted_dict: any = sort_object(dict);
+
+                        var sorted_commentsToRead = sorted_dict.keys;
+
+                        console.log("COMMENTS TO READ")
+                        console.log(sorted_commentsToRead)
+
+                        var comment_index = 0
+
+                        document.onkeydown = function(evt) {
+                          // evt = evt || window.event;
+                          if (evt.shiftKey) {
+                              // alert("Ctrl-Z");
+                              if (comment_index == sorted_commentsToRead.length) {
+                                var msg1 = new SpeechSynthesisUtterance();
+                                msg1.text = "Those are all the comments!";
+                                window.speechSynthesis.speak(msg1);
+                                return;
+                              }
+                              if (comment_index > sorted_commentsToRead.length) {
+                                return;
+                              }
+                              var msg2 = new SpeechSynthesisUtterance();
+                              console.log("TO READ");
+                              console.log(sorted_commentsToRead[comment_index].text);
+                              msg2.text = sorted_commentsToRead[comment_index].text;
+                              window.speechSynthesis.speak(msg2);
+                              comment_index += 1
+
+                          }
+                        };
+                      }
                     }
-                    else if (timeRangeArr[i].type == timeRangeType.NoText) {
-                      document.getElementById("source-text").innerHTML = "Reason for showing: text on screen not mentioned";
+                    showFloatCard = true;
+                    if (document.getElementById("float-card") != null) {
+                      if (timeRangeArr[i].type == timeRangeType.NonDialouge) {
+                        document.getElementById("source-text").innerHTML = "Reason for showing: this video segment has no dialouge";
+                      }
+                      else if (timeRangeArr[i].type == timeRangeType.NoText) {
+                        document.getElementById("source-text").innerHTML = "Reason for showing: text on screen not mentioned";
+                      }
                     }
-                  }
-                  // videoContainer.childElementCount == 1
-                  if (document.getElementById("float-card") == null) {
-                    videoContainer.appendChild(floatCard);   
-                    const goButton = document.getElementById("go-button");
-                    goButton.onclick = function(e) {
-                      window.scrollTo(0, 1150);
+                    // videoContainer.childElementCount == 1
+                    if (document.getElementById("float-card") == null) {
+                      videoContainer.appendChild(floatCard);   
+                      const goButton = document.getElementById("go-button");
+                      goButton.onclick = function(e) {
+                        window.scrollTo(0, 1150);
+                      }
+                      if (timeRangeArr[i].type == timeRangeType.NonDialouge) {
+                        document.getElementById("source-text").innerHTML = "Reason for showing: this video segment has no dialouge";
+                      }
+                      else if (timeRangeArr[i].type == timeRangeType.NoText) {
+                        document.getElementById("source-text").innerHTML = "Reason for showing: text on screen not mentioned";
+                      }
                     }
-                    if (timeRangeArr[i].type == timeRangeType.NonDialouge) {
-                      document.getElementById("source-text").innerHTML = "Reason for showing: this video segment has no dialouge";
-                    }
-                    else if (timeRangeArr[i].type == timeRangeType.NoText) {
-                      document.getElementById("source-text").innerHTML = "Reason for showing: text on screen not mentioned";
-                    }
-                  }
-                  break;
+                    break;
+                }
               }
-            }
 
-            if (!showFloatCard && document.getElementById("float-card") != null) {
-              videoContainer.removeChild(floatCard);
-            }
+              if (!showFloatCard && document.getElementById("float-card") != null) {
+                videoContainer.removeChild(floatCard);
+                document.onkeydown = undefined;
+              }
+              
+              break;
+          }
+            // console.log('The ' + mutation.attributeName + ' attribute was modified.');
+            // console.log(progressBar["style"].transform);
+            
 
 
             // if (parseFloat(progressBar["style"].transform.substring(7)) > 0.1084 &&
@@ -621,7 +273,7 @@ const callback = function(mutationsList, observer) {
 const new_observer = new MutationObserver(callback);
 
 // Start observing the target node for configured mutations
-new_observer.observe(progressBar, config);
+new_observer.observe(progressBar, { attributeFilter: [ "aria-valuenow" ], attributeOldValue: true, childList: true, subtree: true} );
 
 // end
 
@@ -644,31 +296,11 @@ var box;
 let observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
 
-      // if (mutation.type === 'attributes' ) {
-      //   if (mutation.target.id === 'contenteditable-root') {
-      //     console.log(mutation.target);
-      //     if (mutation.attributeName === 'textContent') {
-      //       console.log(mutation.target);
-      //       var box = document.getElementById('my-cool-node');
-      //       box.innerHTML = `<div>TEST</div>`;
-      //     }
-      //   }
-      // }
-
       if (!mutation.addedNodes) return;
   
       for (let i = 0; i < mutation.addedNodes.length; i++) {
         // do things to your newly added nodes here
         let node = mutation.addedNodes[i];
-
-        // if (node.textContent === 'Add a public comment...') {
-        //     console.log(node);
-        //     node.textContent = 'test';
-        // }
-        // if (node.id === 'placeholder-area') {
-        //   console.log(node);
-        //   node.childNodes[1].textContent = 'test!!!';
-        // }
 
         if (node['className'] === 'ytp-progress-list') {
           console.log('Progress Bar');
@@ -695,11 +327,6 @@ let observer = new MutationObserver((mutations) => {
                 <div style="margin-top: 3%;margin-left: 3%;margin-right: 3%;" id="othersComments">
                 </div>`; 
               
-                /*
-                <div><span style="color: blue;text-decoration: underline;" id="timestamp_3">01:36</span>&nbsp;&nbsp;the graphical representation ...</div>
-                    <div><span style="color: blue;text-decoration: underline;" id="timestamp_4">04:47</span>&nbsp;&nbsp;that cartoon of cells ...</div>
-                    <div><span style="color: blue;text-decoration: underline;" id="timestamp_5">06:01</span>&nbsp;&nbsp;the man looks like ...</div>
-                */
                 comments.childNodes[1].appendChild(box);
 
                 const othersComments = document.getElementById("othersComments");
@@ -723,29 +350,6 @@ let observer = new MutationObserver((mutations) => {
 
                   othersComments.appendChild(singleComment);
                 }
-
-                // const timestamp_3 = document.getElementById("timestamp_3");
-                // const timestamp_4 = document.getElementById("timestamp_4");
-                // const timestamp_5 = document.getElementById("timestamp_5");
-              
-                // timestamp_3.onclick = function(e) {
-                //   const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
-                //   window.scrollTo(0, 0);
-                //   youtubeVideo.currentTime = 96;
-                //   youtubeVideo.play();
-                // }
-                // timestamp_4.onclick = function(e) {
-                //   const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
-                //   window.scrollTo(0, 0);
-                //   youtubeVideo.currentTime = 287;
-                //   youtubeVideo.play();
-                // }
-                // timestamp_5.onclick = function(e) {
-                //   const youtubeVideo = <HTMLVideoElement>document.getElementsByTagName("Video")[0];
-                //   window.scrollTo(0, 0);
-                //   youtubeVideo.currentTime = 361;
-                //   youtubeVideo.play();
-                // }
               }
             }
         }
@@ -765,11 +369,6 @@ let observer = new MutationObserver((mutations) => {
               // Assume the comment only contains one keyword
               for (let i in keywords) {
                 if (comment.textContent.includes(keywords[i]["text"])) {
-                  // var to_display = document.createElement("DIV");
-                  // to_display.innerHTML = `<div style="font-size: 130%">Add a time stamp ...</div>
-                  // <div style="margin-top: 3%;margin-left: 3%;margin-right: 3%;">
-                  //     <div style="margin-bottom: 2%;">suggested: Are you talking about&nbsp;&nbsp;<span style="color: blue;text-decoration: underline;"> ${timestamp_string} </span>?</div>
-                  // </div>`;
                   box.innerHTML = `<div style="font-size: 130%">Add a time stamp ...</div>
                 <div style="margin-top: 3%;margin-left: 3%;margin-right: 3%;">
                     <div style="margin-bottom: 2%;">suggested: Are you talking about&nbsp;&nbsp;<div id="timestamps"></div>?</div>
@@ -830,8 +429,6 @@ let observer = new MutationObserver((mutations) => {
                   document.getElementById("sources").appendChild(sourceComment);
                 }
               }
-
-
 
               if (comment.textContent === "Why is the bipolar neuron upset") {
                 box.innerHTML = `<div style="font-size: 130%">Add a time stamp ...</div>
@@ -894,26 +491,6 @@ let observer = new MutationObserver((mutations) => {
         if (node['id'] === 'sections' && node['className'] === 'style-scope ytd-comments') {
             comments = node;
             console.log(node);
-          //   var box = document.createElement("DIV"); 
-          //   box.style = "background-color:#E5E5E5;width:80%;height:50px;padding:10px;";
-          //   box.id = 'my-cool-node';             
-          //   box.innerHTML = `<div style="font-size: 130%;">Easy Start</div>
-          //   <div style="margin: 5px;">
-          //       <span>__looks like__&nbsp;&nbsp;</span>
-          //       <span>The color of __ is __</span>
-          //       <br>
-          //       <span>The __ is __</span>
-          //   </div>
-          // <div style="font-size: 130%">See what others are talking about ...</div>
-          //   <div style="margin: 5px;">
-          //       <div><span style="color: blue;text-decoration: underline;">02:23</span>&nbsp;&nbsp;the graphical representation ...</div>
-          //       <div><span style="color: blue;text-decoration: underline;">04:47</span>&nbsp;&nbsp;that cartoon of neuron ...</div>
-          //       <div><span style="color: blue;text-decoration: underline;">06:01</span>&nbsp;&nbsp;the man looks like ...</div>
-          //   </div>"`; 
-          //   node.childNodes[1].appendChild(box);
-            // console.log(box);
-            // console.log(node);
-            // node.appendChild(para);
         }
 
       //   if (!document.querySelector('#my-cool-node') && comments) {
@@ -947,5 +524,3 @@ let observer = new MutationObserver((mutations) => {
     , attributes: true 
     , characterData: false
   })
-
-
