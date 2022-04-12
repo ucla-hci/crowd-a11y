@@ -6,7 +6,7 @@
 npm install
 ```
 
-### Add your own .env file
+### Add your own .env file to root folder
 
 ```bash
 PORT = 5000
