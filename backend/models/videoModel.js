@@ -1,6 +1,6 @@
 const mongoose = require('mongoose')
 
-const docSchema = mongoose.Schema(
+const videoSchema = mongoose.Schema(
   {
     videoId: { type: String, required: true },
     ccKeywords: [
@@ -35,4 +35,4 @@ const docSchema = mongoose.Schema(
   }
 )
 
-module.exports = mongoose.model('Doc', docSchema)
+module.exports = mongoose.model('Video', videoSchema)
